@@ -1,0 +1,11 @@
+langchain-core
+langchain-google-vertexai
+langgraph
+fastapi
+uvicorn
+traceloop-sdk
+pydantic
+beautifulsoup4
+opentelemetry-exporter-cloud-trace
+opentelemetry-sdk
+PyGithub
