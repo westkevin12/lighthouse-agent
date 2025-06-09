@@ -15,7 +15,7 @@ install: check-deps
 	@command -v uv >/dev/null 2>&1 || { echo "uv is not installed. Installing uv..."; \
 		curl -LsSf https://astral.sh/uv/0.6.12/install.sh | sh; } # Installs to /root/.local/bin if run as root
 	@echo "Ensuring a clean virtual environment..."
-	PATH="/root/.local/bin:$$PATH" uv sync --dev --extra streamlit --extra jupyter --frozen # uv sync will (re)create .venv
+	PATH="/root/.local/bin:$$PATH" uv sync --dev --extra streamlit --extra jupyter
 	@echo "Installing Node.js dependencies..."
 	$(MAKE) install-node-deps
 	@echo "Installation complete!"
