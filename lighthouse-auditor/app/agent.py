@@ -52,34 +52,68 @@ def run_lighthouse_audit(url: str, output_path: Optional[str] = None) -> str:
     """
     try:
         results = lighthouse_runner.run_audit(url, output_path)
-        return json.dumps(results)
+        # Chunk the report before returning
+        chunks = ReportChunker.chunk_report(results)
+        return json.dumps(chunks)
     except Exception as e:
         return f"Error running Lighthouse audit: {str(e)}"
 
 
 @tool
-def analyze_lighthouse_report(report: str) -> str:
-    """Analyze a Lighthouse report and extract key issues.
+def analyze_lighthouse_report(report_input: Union[str, List[Dict[str, Any]], Dict[str, Any]]) -> str:
+    """Analyze a Lighthouse report (or chunks of it) and extract key issues.
     
     Args:
-        report: JSON string containing Lighthouse report
+        report_input: JSON string containing Lighthouse report (can be a list of chunks or a single report),
+        or a pre-parsed list of chunks, or a single pre-parsed report.
         
     Returns:
         Analysis of issues found
     """
     try:
-        # Parse report and extract issues
-        if isinstance(report, str):
-            report_data = json.loads(report)
+        report_chunks_data: List[Dict[str, Any]] = []
+        if isinstance(report_input, str):
+            parsed_json = json.loads(report_input)
+            if isinstance(parsed_json, list):
+                report_chunks_data = parsed_json  # It's a list of chunks
+            elif isinstance(parsed_json, dict):
+                report_chunks_data = [parsed_json] # It's a single report, treat as one chunk
+            else:
+                return "Error: Parsed JSON is not a list of chunks or a single report dictionary."
+        elif isinstance(report_input, list):
+            all_dicts = True
+            for item in report_input:
+                if not isinstance(item, dict):
+                    all_dicts = False
+                    break
+            if all_dicts:
+                report_chunks_data = report_input # Already a list of chunk dicts
+            else:
+                return "Error: report_input list contains non-dictionary items."
+        elif isinstance(report_input, dict):
+            report_chunks_data = [report_input] # Single pre-parsed report
         else:
-            report_data = report
-            
-        issues = lighthouse_runner.extract_issues(report_data)
-        
+            return f"Error: Invalid report_input type. Expected str, list of dicts, or dict. Got {type(report_input)}"
+
+        all_issues: List[Any] = [] # Assuming AuditIssue type from lighthouse_runner
+        for i, chunk_data in enumerate(report_chunks_data):
+            if not isinstance(chunk_data, dict):
+                # Log or return an error for this specific chunk
+                print(f"Warning: Chunk {i} is not a dictionary, skipping.")
+                continue
+            issues_from_chunk = lighthouse_runner.extract_issues(chunk_data)
+            all_issues.extend(issues_from_chunk)
+
         # Format response
         response = ["# Lighthouse Audit Analysis\n"]
         
-        for issue in issues:
+        if len(report_chunks_data) > 1:
+            response.append(f"Analyzed from {len(report_chunks_data)} report chunks.\n")
+
+        if not all_issues:
+            return "No significant issues found in the Lighthouse report."
+
+        for issue in all_issues:
             response.extend([
                 f"## {issue.title} (Impact: {issue.impact})",
                 f"Score: {issue.score}",
@@ -99,6 +133,8 @@ def analyze_lighthouse_report(report: str) -> str:
                 ])
                 
         return "\n".join(response)
+    except json.JSONDecodeError as e:
+        return f"Error decoding report JSON: {str(e)}"
     except Exception as e:
         return f"Error analyzing report: {str(e)}"
 
@@ -153,7 +189,7 @@ llm = ChatVertexAI(
 def should_continue(state: MessagesState) -> str:
     """Determines whether to use tools or end the conversation."""
     last_message = state["messages"][-1]
-    return "tools" if last_message.tool_calls else END
+    return "tools" if getattr(last_message, "tool_calls", None) else END
 
 
 def call_model(state: MessagesState, config: RunnableConfig) -> dict[str, BaseMessage]:
